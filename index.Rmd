@@ -1,0 +1,134 @@
+---
+title: "Proper exrecise motion detection for Bicep curls"
+author: "Aditya Singh"
+date: "Saturday, April 25, 2015"
+output: html_document
+---
+
+###Synopsis
+
+This research is focused on Predicting "How well" a subject performs an exercise using low cost accelerometers (cellphones/wearables).The data and inspiration for this analysis is taken from Groupware@LES @ http://groupware.les.inf.puc-rio.br/public/papers/2013.Velloso.QAR-WLE.pdf
+
+The  results underline the potential of model-based assessment
+and the positive impact of real-time user feedback on
+the quality of execution of an exercise.
+
+We will be attempting to predict the 'classe' value - Which can take values from A to E. A stands for the perfect way to perform a Barbell bicep curl and B to E are common mistakes people make lifting weights.
+
+###Data Loading
+
+```{r dataLoad,message=FALSE,warning=FALSE,cache=TRUE}
+library(ggplot2)
+library(caret)
+library(randomForest)
+
+file1<- "./pml-training.csv"
+file2<- "./pml-testing.csv"
+fileurl1<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileurl2<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if (!file.exists(file1))
+    {download.file(fileurl1,file1)}
+
+if (!file.exists(file2)) 
+    {download.file(fileurl2,file2)}
+
+```
+
+<br>
+
+###Data Processing
+
+For Cross-Validation, 30% of the dataset was taken out of the Training dataset without replacement. Any Data manipulations understood while understanding the training dataset will be applied to both the cross-validation dataset as well as the test dataset.
+
+```{r Partition}
+set.seed(1122)
+training<-read.csv(file1)
+testing<-read.csv(file2)
+
+partition<-createDataPartition(y=training$classe,p=.7,list=FALSE)
+
+training<-training[partition,]
+crossvalidation<-training[-partition,]
+
+```
+
+
+```{r, echo=FALSE}
+##numeric_data<-unlist(lapply(training,function(x) class(x)=="numeric"))
+
+##PreObj<-preProcess(training[numeric_data],method="knnImpute")
+
+##training[,numeric_data]<-predict(PreObj, training[,numeric_data])
+##crossvalidation[,numeric_data]<-predict(PreObj, crossvalidation[,numeric_data])
+##testing[,numeric_data]<-predict(PreObj, testing[,numeric_data])
+```
+
+Analysis into the missing values revealed that the columns which contained them were almost entirely filled with NAs (>90%). This tells us that these variable can have little to no impact on the model and imputing so many values will only lead to reduced accuracy of the model. So the values were set to zero the following near zero variance preprocess will remove these predictors from the model. 
+
+```{r ImputeNA}
+training[is.na(training)] <- 0
+crossvalidation[is.na(crossvalidation)] <- 0
+testing[is.na(testing)] <- 0
+```
+
+Apart from the nearzero variance predictors. Predictors such as - Row label,Name of the subject, timestamps and num_window were also dropped as they overfit the model.
+
+```{r correctData}
+nzv <- nearZeroVar(training)
+
+training<-training[-nzv]
+crossvalidation<-crossvalidation[-nzv]
+testing<-testing[-nzv]
+
+training<-training[-c(1,2,3,4,5,6,7)]
+crossvalidation<-crossvalidation[-c(1,2,3,4,5,6,7)]
+testing<-testing[-c(1,2,3,4,5,6,7)]
+```
+
+<br>
+
+### The Model
+
+The model is a simple random forest model fitted on all remianing predictors.
+
+```{r Modeling,cache=TRUE}
+rf_model  <- randomForest(training[-52],training$classe)
+
+predCrossV<-predict(rf_model,newdata=crossvalidation[-52])
+predTest<-predict(rf_model,newdata=testing[-52])
+```
+
+<br>
+
+### Model Validation
+
+The Below validation tables show that:
+OOB error rate in the training set = 0.47%
+The error rate in the Cross-validation set = 0%
+
+The final predicted values for the Test set are also diplayed below
+
+```{r Validation,cache=TRUE}
+
+rf_model
+confusionMatrix(predCrossV,crossvalidation$classe)
+
+predTest
+
+answers = predTest
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(answers)
+```
+
+
+###Conclusion 
+
+The randomForest model created above is fairly accurate in predicting common errors people make while lifting weight. 
